@@ -33,11 +33,9 @@ module Blacklight::HierarchyHelper
   def render_hierarchy(bl_facet_field, delim='_')
     field_name = bl_facet_field.field
     prefix = field_name.gsub("#{delim}#{field_name.split(/#{delim}/).last}", '')
-
     facet_tree_for_prefix = facet_tree(prefix)
     tree = facet_tree_for_prefix ? facet_tree_for_prefix[field_name] : nil
     return '' unless tree
-
     tree.keys.sort.collect do |key|
       render_facet_hierarchy_item(field_name, tree[key], key)
     end.join("\n").html_safe
@@ -88,7 +86,6 @@ module Blacklight::HierarchyHelper
       @facet_tree[hkey][facet_field] ||= {}
       data = @response.facet_by_field_name(facet_field)
       next if data.nil?
-
       data.items.each { |facet_item|
         path = facet_item.value.split(split_regex)
         loc = @facet_tree[hkey][facet_field]
@@ -98,7 +95,10 @@ module Blacklight::HierarchyHelper
         loc[:_] = HierarchicalFacetItem.new(facet_item.value, facet_item.value.split(split_regex).last, facet_item.hits)
       }
     }
-    @facet_tree[hkey]
+    #find if sort methods is configured if so sort the tree
+    sort_method = facet_config.length >= 2 ? facet_config[2] : ''
+    sorted_tree = sort_method.blank? ? @facet_tree[hkey] : send sort_method, @facet_tree[hkey]
+    sorted_tree
   end
 
 # --------------------------------------------------------------------------------------------------------------------------------
