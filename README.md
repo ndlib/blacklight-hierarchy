@@ -50,7 +50,10 @@ Add the hierarchy-specific options to the controller configuration
 
     config.facet_display = {
       :hierarchy => {
-        'queue_status' => [['facet'], ':']
+        'queue_status' => {
+          fields: ['facet'],
+          delimiter: ':'
+        }
       }
     }
 
