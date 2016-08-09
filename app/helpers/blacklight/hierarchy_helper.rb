@@ -59,9 +59,16 @@ module Blacklight::HierarchyHelper
   #  e.g. if you had this in controller:
   #   config.facet_display = {
   #     :hierarchy => {
-  #       'wf' => [['wps','wsp','swp'], ':'],
-  #       'callnum_top' => [['facet'], '/'],
-  #       'exploded_tag' => [['ssim'], ':']
+  #       'wf' => {
+  #          fields: ['wps','wsp','swp']
+  #       },
+  #       'callnum_top' => {
+  #          fields: ['facet'],
+  #          delimiter: '/'
+  #       },
+  #       'exploded_tag' => {
+  #         fields: ['ssim']
+  #       }
   #    }
   #  }
   # then possible hkey values would be 'wf', 'callnum_top', and 'exploded_tag'.
@@ -71,8 +78,8 @@ module Blacklight::HierarchyHelper
   #  used to break up the sections of hierarchical data in the solr field being read.  when joined, the prefix and 
   #  suffix should form the field name.  so, for example, 'wf_wps', 'wf_wsp', 'wf_swp', 'callnum_top_facet', and
   #  'exploded_tag_ssim' would be the solr fields with blacklight-hierarchy related configuration according to the 
-  #  hash above.  ':' would be the delimiter used in all of those fields except for 'callnum_top_facet', which would 
-  #  use '/'.  exploded_tag_ssim might contain values like ['Book', 'Book : Multi-Volume Work'], and callnum_top_facet 
+  #  hash above.  ':' is the default delimiter. 'callnum_top_facet' uses a custom delimiter of '/'.
+  #  exploded_tag_ssim might contain values like ['Book', 'Book : Multi-Volume Work'], and callnum_top_facet 
   #  might contain values like ['LB', 'LB/2395', 'LB/2395/.C65', 'LB/2395/.C65/1991'].
   # note: the suffixes (e.g. 'ssim' for 'exploded_tag' in the above example) can't have underscores, otherwise things break.
   def facet_tree(hkey)
@@ -80,9 +87,16 @@ module Blacklight::HierarchyHelper
     return @facet_tree[hkey] unless @facet_tree[hkey].nil?
     return @facet_tree[hkey] unless blacklight_config.facet_display[:hierarchy] && blacklight_config.facet_display[:hierarchy][hkey]
     @facet_tree[hkey] = {}
-    facet_config= blacklight_config.facet_display[:hierarchy][hkey]
-    split_regex = Regexp.new("\s*#{Regexp.escape(facet_config.length >= 2 ? facet_config[1] : ':')}\s*")
-    facet_config.first.each { |key|
+
+    provided_configuration = blacklight_config.facet_display[:hierarchy][hkey]
+    facet_config = {
+      fields: ['sim'],
+      delimiter: ':',
+      presenter: lambda{ |value| value }
+    }.merge provided_configuration
+
+    split_regex = Regexp.new("\s*#{Regexp.escape(facet_config[:delimiter])}\s*")
+    facet_config[:fields].each { |key|
       # TODO: remove baked in notion of underscores being part of the blacklight facet field names
       facet_field = [hkey,key].compact.join('_')
       @facet_tree[hkey][facet_field] ||= {}
@@ -95,7 +109,9 @@ module Blacklight::HierarchyHelper
         while path.length > 0
           loc = loc[path.shift] ||= {}
         end
-        loc[:_] = HierarchicalFacetItem.new(facet_item.value, facet_item.value.split(split_regex).last, facet_item.hits)
+
+        display_value = facet_config[:presenter].call(facet_item.value.split(split_regex).last)
+        loc[:_] = HierarchicalFacetItem.new(facet_item.value, display_value , facet_item.hits)
       }
     }
     @facet_tree[hkey]
@@ -113,11 +129,11 @@ module Blacklight::HierarchyHelper
 
   def facet_order(prefix)
     param_name = "#{prefix}_facet_order".to_sym
-    params[param_name] || blacklight_config.facet_display[:hierarchy][prefix].first
+    params[param_name] || blacklight_config.facet_display[:hierarchy][prefix][:fields].first
   end
 
   def facet_after(prefix, order)
-    orders = blacklight_config.facet_display[:hierarchy][prefix]
+    orders = blacklight_config.facet_display[:hierarchy][prefix][:fields]
     orders[orders.index(order)+1] || orders.first
   end
 
@@ -165,7 +181,7 @@ module Blacklight::HierarchyHelper
     if is_hierarchical?(field_name)
       (prefix,order) = field_name.split(/_/, 2)
 
-      return if blacklight_config.facet_display[:hierarchy][prefix].length < 2
+      return if blacklight_config.facet_display[:hierarchy][prefix][:fields].length < 2
 
       new_order = facet_after(prefix,order)
       new_params = rotate_facet_params(prefix,order,new_order)
